@@ -17,14 +17,14 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Enable Apache rewrite module
+# Enable Apache modules
 RUN a2enmod rewrite
 
-# Change Apache to listen on Render's default port 10000
+# Change port to 10000 for Render
 RUN sed -i 's/Listen 80/Listen 10000/g' /etc/apache2/ports.conf \
     && sed -i 's/<VirtualHost \*:80>/<VirtualHost *:10000>/g' /etc/apache2/sites-available/000-default.conf
 
-# Set Laravel public folder as document root
+# Set document root to public
 RUN sed -i 's|/var/www/html|/var/www/html/public|g' /etc/apache2/sites-available/000-default.conf \
     && sed -i 's|/var/www/html|/var/www/html/public|g' /etc/apache2/apache2.conf
 
@@ -40,26 +40,25 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Copy composer files first (better caching)
+# Copy composer files and install dependencies WITHOUT running scripts first
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
-# Copy the entire project
+# Copy the rest of the application
 COPY . .
 
-# Install npm dependencies and build assets
+# Now run npm and scripts
 RUN npm install && npm run build
 
 # Storage link
 RUN php artisan storage:link || true
 
 # Set permissions
-RUN mkdir -p storage/framework/cache storage/framework/sessions \
-    storage/framework/views bootstrap/cache public/uploads \
+RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache public/uploads \
     && chown -R www-data:www-data storage bootstrap/cache public/uploads \
     && chmod -R 775 storage bootstrap/cache public/uploads
 
-# Create startup script with migration + seeder
+# Create startup script (migrations + seeder)
 RUN echo '#!/bin/bash' > /start.sh && \
     echo 'php artisan config:cache' >> /start.sh && \
     echo 'php artisan route:cache' >> /start.sh && \
